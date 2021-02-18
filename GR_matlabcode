@@ -1,0 +1,90 @@
+%%
+clear all;
+close all;
+
+[rawdata, text, ~] = xlsread('KV07_ciprotitrationandbarcodeGCs.xlsx', 'A1:Y3399');
+
+timestamp = text(1 : 20 : end);
+t = zeros(1, length(timestamp));
+
+for i = 1 : length(t)
+    C = strsplit(timestamp{i}, '(');
+    [~, ~, ~, H, M, S] = datevec(C{2}(1 : end - 1));
+    t(i) = H + M / 60 + S / 3600;
+end
+
+OD = zeros(384, length(t));
+for i = 1 : length(t)
+    curODs = rawdata(20 * (i - 1) + 4 : 20 * (i - 1) + 19, 2 : 25)';
+    OD(:, i) = curODs(:);
+end
+OD = OD';
+curODs = curODs';
+t = t';
+%save('growthcurve_data.mat', 't', 'OD');
+%%
+OD1 = OD(:,[25:48,73:96,121:144,169:192,217:240,265:288,313:336,337:360,361:384]);
+plot(OD1)
+time = linspace(0,1440,170)';
+%% blanks
+%OD(:,337:360);
+%mean(OD(:,337:360));
+%median(mean(OD(:,337:360)));
+%blank = median(mean(OD(:,337:360)));
+blank = zeros(170,216);
+for f = 1:170
+    blank(f,:) = OD1(1,:);
+end
+%%
+ODmb = OD1-blank;
+OD2 = OD(:,[25:48,73:96,121:144,169:192,217:240,265:288,313:336,361:384]);
+%%
+blank2 = blank(:,1:192);
+ODmb1 = OD2-blank2;
+plot(time/60,ODmb1(:,:))
+sampleplate = ODmb1;
+%ylim([-4,1])
+xlim([0,24])
+xlabel('time (hrs)')
+ylabel('log(OD)')
+logOD = log(ODmb1);
+%% blanking and analysis 
+for k=1:length(sampleplate)
+    
+    % Blank the OD600 values
+    %blk = blankplate(k).OD600(end);
+    %od = sampleplate(k).OD600;
+    %odblk = od-blk;
+    
+    %sampleplate(k).OD600_blanked = odblk;
+    %sampleplate(k).blank_value = blk;
+    
+    % Calculate growth rate 
+    smf = 8; % Smoothing factor for growth rate calculation
+    t = time(:,1);
+    dt = mean(diff(t)); % Obtain time interval
+    logodblk = log(ODmb1(:,k));
+    grblk = gradient(smooth(logodblk,smf))/dt;
+    
+    % Correct for complex values in growth rate
+    grblk(imag(grblk)~=0) = nan;
+    
+    sampleplate(:,k) = grblk;
+    sampleplate(:,k) = AAD_growthrate_sliding(t,logodblk,8);
+    
+end
+%%
+MAX = max(real(sampleplate(20:end,:)));
+max_s1=MAX(:,(1:96));
+max_s2=MAX(:,(97:end));
+
+%% plot a histogram
+
+set1=histogram(max_s1)
+xlabel('max growth rate (1/m)')
+ylabel('number of wells')
+hold on 
+set2=histogram(max_s2)
+set1.BinWidth = 0.0015;
+set2.BinWidth = 0.0015;
+hold off
